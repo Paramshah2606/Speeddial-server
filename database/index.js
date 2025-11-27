@@ -1,11 +1,13 @@
 const { Sequelize } = require('sequelize');
+const { DB_Database, DB_User, DB_Password, DB_Host, DB_Port } = require('../config/constant');
 
 const sequelize = new Sequelize(
-  process.env.DB_NAME,    // database name
-  process.env.DB_USER,    // username
-  process.env.DB_PASS,    // password
+  DB_Database,    // database name
+  DB_User,    // username
+  DB_Password,    // password
   {
-    host: process.env.DB_HOST,
+    host: DB_Host,
+    port:DB_Port,
     dialect: 'mysql',
     logging: false,       // disable logging
   }

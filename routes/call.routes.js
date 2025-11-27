@@ -1,8 +1,9 @@
 const pkg = require('agora-access-token');
+const { Agora_App_Id, Agora_App_Certificate } = require('../config/constant');
 const { RtcTokenBuilder, RtcRole } = pkg;
 
-const APP_ID = process.env.AGORA_APP_ID;
-const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
+const APP_ID = Agora_App_Id;
+const APP_CERTIFICATE = Agora_App_Certificate;
 
 const generateToken = (req, res) => {
   try {
