@@ -1,8 +1,7 @@
 // src/socket.js
 const { Server } = require("socket.io");
 const { v4: uuid } = require("uuid");
-
-
+const { User,Call, CallParticipant } = require("../models");
 /**
  * createSocket(server)
  * - attaches a socket.io server to the given http server
@@ -41,7 +40,7 @@ function createSocket(server) {
         if (cb && typeof cb === "function") cb(entry || null);
         });
 
-    socket.on("call:request", ({ from, to,fromUser }) => {
+    socket.on("call:request",async ({ from, to,fromUser }) => {
     console.log("Call request:", from, "->", to,fromUser);
 
 
@@ -53,7 +52,69 @@ function createSocket(server) {
         });
         return;
     }
+
     const callId = uuid();
+
+    await Call.create({
+    call_id: callId,
+    created_by: from,
+    is_group_call: false,
+    status: "ringing",
+    channel_name:callId
+  });
+
+  const callerDB=await User.findOne({where:{callingNumber:from}});
+  const receiverDB=await User.findOne({where:{callingNumber:to}});
+
+   await CallParticipant.bulkCreate([
+    {
+      call_id: callId,
+      user_id: callerDB.id,
+      role: "host",
+      status: "joined", // caller is auto-joined
+      join_time: new Date(),
+    },
+    {
+      call_id: callId,
+      user_id: receiverDB.id,
+      role: "participant",
+      status: "missed", // will update when they accept
+    },
+  ]);
+
+  const timeoutId = setTimeout(async () => {
+    console.log("Call auto-missed:", callId);
+
+    // If call already accepted or canceled → do nothing
+    const stored = activeCalls.get(callId);
+    if (!stored || stored.status === "active") return;
+
+    // DB updates
+    await Call.update(
+      { status: "missed", end_time: new Date() },
+      { where: { call_id: callId } }
+    );
+
+    await CallParticipant.update(
+      { status: "left", leave_time: new Date() },
+      { where: { call_id: callId, user_id: callerDB.id } }
+    );
+
+    await CallParticipant.update(
+      { status: "missed" },
+      { where: { call_id: callId, user_id: receiverDB.id } }
+    );
+
+    // Notify both users
+    const caller = onlineUsers.get(from.toString());
+    const recv = onlineUsers.get(to.toString());
+
+    if (caller) io.to(caller.socketId).emit("call:missed", { callId });
+    if (recv) io.to(recv.socketId).emit("call:missed", { callId });
+
+    activeCalls.delete(callId);
+  }, 60_000);
+
     activeCalls.set(callId, {
         caller: from,
         receiver: to,
@@ -75,15 +136,30 @@ function createSocket(server) {
     });
     });
 
-    socket.on("call:accept", ({ callId }) => {
+    socket.on("call:accept",async ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
 
       call.status = "active";
 
+      await Call.update(
+        { status: "active" },
+        { where: { call_id: callId } }
+      );
+
       const caller = onlineUsers.get(call.caller.toString());
       const receiver = onlineUsers.get(call.receiver.toString());
-
+      const receiverDB=await User.findOne({where:{callingNumber:call.receiver}});
+      
+      await CallParticipant.update(
+        {
+          status: "joined",
+          join_time: new Date(),
+        },
+        {
+          where: { call_id: callId, user_id: receiverDB.id }
+        }
+      );
       // both users get accepted event
       io.to(caller.socketId).emit("call:accepted", {
         callId,
@@ -96,10 +172,20 @@ function createSocket(server) {
       });
     });
 
-    socket.on("call:reject", ({ callId }) => {
+    socket.on("call:reject",async ({ callId }) => {
       const call = activeCalls.get(callId);
 
       if (!call) return;
+
+      await CallParticipant.update(
+        { status: "rejected" },
+        { where: { call_id: callId } }
+      );
+
+      await Call.update(
+        {status:"rejected"},
+        {where:{call_id:callId}}
+      );
 
       const { caller, receiver } = call;
       const callerEntry = onlineUsers.get(caller);
@@ -116,20 +202,50 @@ function createSocket(server) {
       activeCalls.delete(callId);
     });
 
-    socket.on("call:cancel", ({ callId }) => {
+    socket.on("call:cancel",async ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
 
+      await Call.update(
+        { status: "canceled", end_time: new Date() },
+        { where: { call_id: callId } }
+      );
+
+      const callerDB=await User.findOne({where:{callingNumber:call.caller}});
+      const receiverDB=await User.findOne({where:{callingNumber:call.receiver}});
+
+      await CallParticipant.update(
+        { status: "left", leave_time: new Date() },
+        { where: { call_id: callId, user_id: callerDB.id } }
+      );
+
+      await CallParticipant.update(
+        { status: "missed" },
+        { where: { call_id: callId, user_id: receiverDB.id } }
+      );
+
       const receiver = onlineUsers.get(call.receiver.toString());
+      const caller = onlineUsers.get(call.caller.toString());
       if (receiver)
         io.to(receiver.socketId).emit("call:canceled", { callId });
-
+      if (caller)
+        io.to(receiver.socketId).emit("call:canceled", { callId });
       activeCalls.delete(callId);
     });
 
-    socket.on("call:end", ({ callId }) => {
+    socket.on("call:end",async ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
+
+      await Call.update(
+        { status: "ended", end_time: new Date() },
+        { where: { call_id: callId } }
+      );
+
+      await CallParticipant.update(
+        { status: "left", leave_time: new Date() },
+        { where: { call_id: callId } }
+      );
 
       const caller = onlineUsers.get(call.caller.toString());
       const receiver = onlineUsers.get(call.receiver.toString());
