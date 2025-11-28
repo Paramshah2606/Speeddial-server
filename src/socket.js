@@ -116,11 +116,6 @@ function createSocket(server) {
       activeCalls.delete(callId);
     });
 
-
-
-    // -----------------------------
-    // CALL CANCEL
-    // -----------------------------
     socket.on("call:cancel", ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
@@ -132,9 +127,6 @@ function createSocket(server) {
       activeCalls.delete(callId);
     });
 
-    // -----------------------------
-    // CALL END
-    // -----------------------------
     socket.on("call:end", ({ callId }) => {
       const call = activeCalls.get(callId);
       if (!call) return;
@@ -147,7 +139,6 @@ function createSocket(server) {
 
       activeCalls.delete(callId);
     });
-
 
     // When user disconnects — remove from onlineUsers map
     socket.on("disconnect", (reason) => {
