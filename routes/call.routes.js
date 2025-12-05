@@ -55,7 +55,7 @@ const getCallHistory = async (req, res) => {
           include: [
             {
               model: CallParticipant,
-              include: [{ model: User,as:"User", attributes: ["id", "username"] }],
+              include: [{ model: User,as:"User", attributes: ["id", "username","callingNumber"] }],
             },
           ],
         },
@@ -66,22 +66,29 @@ const getCallHistory = async (req, res) => {
     // Format response: flatten structure
     const history = callParticipants.map((cp) => {
       const call = cp.Call;
-      console.log(cp.status);
+
+      const participants = call.CallParticipants.map((p) => ({
+        userId: p.user_id,
+        username: p.User?.username || "Unknown",
+        virtualNumber: p.User?.callingNumber || null,
+        role: p.role,
+        status: p.status,
+      }));
+
+      const other = participants.find((p) => p.userId != userId) || null;
+
+      console.log(call);
       return {
         callId: call.call_id,
         isGroupCall: call.is_group_call,
         status: call.status,
-        startTime: call.start_time,
-        endTime: call.end_time,
+        startTime: cp.join_time,
+        endTime: cp.leave_time,
         // Current user role/status
         userRole: cp.role,
         userStatus: cp.status,
-        participants: call.CallParticipants.map((p) => ({
-          userId: p.user_id,
-          role: p.role,
-          status: p.status,
-          username: p.User?.username || "Unknown",
-        })),
+        otherUser: other, 
+        participants
       };
     });
 

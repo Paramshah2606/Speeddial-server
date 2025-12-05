@@ -40,7 +40,7 @@ createSocket(server);
 // start server
 const PORT = constant.PORT || 5000;
 console.log("Sync starting");
-sequelize.sync({alter:true,force:false}).then(() => {
+sequelize.sync({alter:false,force:false}).then(() => {
   console.log("Database synced");
   server.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
 });
